@@ -1,0 +1,190 @@
+#!/usr/bin/env ruby
+
+require 'rexml/document'
+require 'fileutils'
+
+include REXML
+
+#
+# Simple Maven POM helper to replace versions in the pom.xml
+#
+class MavenPOMHelper
+
+	UNSNAPSHOT_KEY = "u"
+	SNAPSHOT_KEY = "s"
+	ALL_KEY = "a"
+
+	SNAPSHOT = "SNAPSHOT"
+
+	def status(secondary_command)
+		
+		puts "Showing status #{translate_command(secondary_command)}:\n"
+		poms = find_poms()
+		msgs = []
+		poms.each do |p|			
+			artifact, version = find_all_artifact_info(p)
+			if !artifact.nil?
+
+				command_name = translate_command(secondary_command)
+				if version.include? command_name or secondary_command.eql? ALL_KEY
+					msgs << "\tPOM: #{artifact} - #{version} - #{p}"
+				end
+			end
+		end
+
+		if msgs.size.eql? 0 
+			puts "None"
+		else
+			msgs.sort.each do |m|
+				puts "#{m}"
+			end
+		end
+	end
+
+	def translate_command(secondary_command)
+		case secondary_command
+			when SNAPSHOT_KEY
+				return "SNAPSHOT"
+			when UNSNAPSHOT_KEY
+				return "UNSNAPSHOT"
+			else
+				return "ALL"
+		end
+				
+	end
+
+	def find_poms()
+
+		return poms = Dir.glob("**/pom.xml")		
+	end
+
+	def find_all_artifact_info(pom_file)
+		
+		xmldoc = Document.new File.new(pom_file)
+		
+		artifact_name = get_artifact_name(xmldoc)
+		version = get_version(xmldoc)
+		
+		if !artifact_name.empty? and !version.empty?			
+			snapshot = version.include? SNAPSHOT_KEY
+			return artifact_name, version
+		end		
+	end
+
+	def get_version(xmldoc)
+
+		version = ""
+		xmldoc.elements.each("project/version") do |pa|
+			version = pa.text			
+		end
+		return version
+	end
+
+	def unsnapshot(artifact_name)
+
+		poms = find_poms()
+		poms.each do |p|			
+			artifact, version_text = replace_all_artifact_info(p, artifact_name)		
+		end	
+	end
+
+	def replace_all_artifact_info(pom_file, artifact_name)
+		
+		xmldoc = Document.new File.new(pom_file)
+		
+		name = get_artifact_name(xmldoc)
+
+		if artifact_name.eql? name
+			puts "Replacing #{name} in #{pom_file}"
+			replace_version(pom_file, xmldoc)
+			exit
+		end			
+	end
+
+	def get_artifact_name(xmldoc)
+
+		artifact_name = ""
+		xmldoc.elements.each("project/artifactId") do |pa|
+			artifact_name = pa.text			
+		end
+		return artifact_name
+	end
+
+	def replace_version(pom_file, xmldoc)
+		
+		xmldoc.elements.each("project/version") do |pa|
+			
+			xml_version = pa.text
+			if xml_version.include? SNAPSHOT
+
+				version = xml_version.match(/([0-9\.]*)-/)[1]
+				puts "Version: #{version}"
+
+				# Strip snapshot
+				pa.text = version
+				puts "New version #{pa.text}"
+			end			
+
+		end
+
+		File.open(pom_file, "w") do |data|
+			data << xmldoc
+		end
+	end
+
+	def snapshot(artifactname, version_and_branch_name)
+
+		puts "Snapshot #{artifactname} with #{version_and_branch_name}"
+	end
+
+	def help()
+
+		# Global help
+		puts "Usage:\t#{File.basename($0)} status <a|s|u> or ALL:SNAPSHOT:UNSNAPSHOT\n" + 		     
+		     "\t#{File.basename($0)} unsnapshot <servicename>"
+	end
+
+end
+
+mvp = MavenPOMHelper.new()
+
+if ARGV.length > 0
+
+	command = ARGV[0]	
+
+	if command.eql? "status"
+
+		if ARGV.size.eql? 2 and !ARGV[1].nil?
+			secondary_command = ARGV[1].downcase
+			mvp.status(secondary_command)		
+		else
+			puts "Usage: #{File.basename($0)} status <#{MavenPOMHelper::SNAPSHOT_KEY}|#{MavenPOMHelper::UNSNAPSHOT_KEY}|#{MavenPOMHelper::ALL_KEY}>"
+		end
+	end
+
+	# TODO: Multiple service names
+	if command.eql? "unsnapshot"
+
+		artifactname = ARGV[1]		
+		if !artifactname.nil?
+			puts "Unsnapshot #{artifactname}"
+			mvp.unsnapshot(artifactname)
+		else
+			puts "Usage: #{File.basename($0)} unsnapshot <nameofservice>"
+		end
+	end
+
+	if command.eql? "snapshot"
+
+		artifactname = ARGV[1]		
+		version_branch_name = ARGV[2]
+		if !artifactname.nil?
+			puts "Snapshot #{artifactname}"
+			mvp.snapshot(artifactname, version_branch_name)
+		else
+			puts "Usage: #{File.basename($0)} snapshot <nameofservice> <version_and_branch_name>"
+		end
+	end
+else
+	mvp.help()
+end	

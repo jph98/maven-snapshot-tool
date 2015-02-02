@@ -8,6 +8,7 @@ include REXML
 # Simple Maven POM helper to replace versions in the pom.xml
 class Ph
 
+	DEBUG = false
 	SNAPSHOT_KEY = "s"
 	ALL_KEY = "a"
 
@@ -22,9 +23,11 @@ class Ph
 
 	def status(poms, secondary_command)
 		
+		puts "Showing status #{secondary_command} for poms..."
+
 		msgs = []
 		poms.each do |p|			
-			artifact, version = find_all_artifact_info(p)
+			artifact, version = find_all_pom_statuses(p)
 			if !artifact.nil?
 
 				if secondary_command.eql? SNAPSHOT_KEY and version.include? SNAPSHOT_STATUS
@@ -36,7 +39,7 @@ class Ph
 		end
 
 		if msgs.size.eql? 0 
-			puts "\tNone"
+			puts "\tNo pom information available"
 		else
 			msgs.sort.each do |m|
 				puts "#{m}"
@@ -44,16 +47,16 @@ class Ph
 		end
 	end
 
-	def find_poms()
+	def find_poms(root_dir)
 
-		return poms = Dir.glob("**/pom.xml")		
+		return poms = Dir.glob("#{root_dir}/**/pom.xml")		
 	end
 
-	def find_all_artifact_info(pom_file)
+	def find_all_pom_statuses(pom_file)
 		
 		xmldoc = Document.new File.new(pom_file)
 		
-		artifact_name = get_artifact_name(xmldoc)
+		artifact_name = get_project_artifact_name(xmldoc)
 		version = get_version(xmldoc)
 		
 		if !artifact_name.empty? and !version.empty?			
@@ -88,15 +91,16 @@ class Ph
 		
 		xmldoc = Document.new File.new(pom_file)
 		
-		name = get_artifact_name(xmldoc)
+		name = get_project_artifact_name(xmldoc)
 
+		puts "Name: #{name} and artifact name: #{artifact_name}"
 		if mode.eql? Ph::UNSNAPSHOT and artifact_name.eql? name
 			puts "PROJECT POM version for #{name} in #{pom_file}"
 			unsnapshot_project_version(pom_file, xmldoc)
 			return artifact_name
 		elsif mode.eql? Ph::SNAPSHOT and artifact_name.eql? name
 			puts "PROJECT POM version for #{name} in #{pom_file}"
-			snapshot_project_version(pom_file, xmldoc, version_and_branch_name)
+			snapshot_project_version(pom_file, xmldoc, artifact_name, version_and_branch_name)
 			return artifact_name
 		end
 	end
@@ -126,23 +130,23 @@ class Ph
 			end			
 		end
 
-		write_doc(xmldoc)
+		write_doc(xmldoc, pom_file)
 	end
 
-	def snapshot_project_version(pom_file, xmldoc, version_and_branch_name)
+	def snapshot_project_version(pom_file, xmldoc, artifact_name, version_and_branch_name)
 		
 		xmldoc.elements.each("project/version") do |pa|
 			
 			xml_version = pa.text
 
-			puts "Changing version: '#{xml_version}' from #{pa.text} to #{version_and_branch_name}"
+			puts "\tChanging version: #{xml_version} for #{artifact_name} from #{pa.text} to #{version_and_branch_name} in #{pom_file}"
 			pa.text = version_and_branch_name
 		end
 
-		write_doc(xmldoc)
+		write_doc(xmldoc, pom_file)
 	end
 
-	def get_artifact_name(xmldoc)
+	def get_project_artifact_name(xmldoc)
 
 		artifact_name = ""
 		xmldoc.elements.each("project/artifactId") do |pa|
@@ -151,7 +155,7 @@ class Ph
 		return artifact_name
 	end
 
-	def write_doc(xmldoc)
+	def write_doc(xmldoc, pom_file)
 
 		if @should_write
 			File.open(pom_file, "w") do |data|
@@ -162,13 +166,13 @@ class Ph
 
 	def unsnapshot_dependency_version(pom_file, xmldoc, artifact_name)
 		
-		# TODO: Ignore current file
-		puts "Considering #{pom_file} for #{artifact_name}"
+		puts "Considering #{pom_file} for #{artifact_name}" if DEBUG
 
 		xmldoc.elements.each("project/dependencies/dependency/version") do |pa|
 			
 			xml_version = pa.text
-			
+
+			# TODO: Grab the name of the artifact and make sure it's the right one
 			puts "Version: '#{xml_version}' for #{pa.text}"
 
 			if xml_version.include? SNAPSHOT_STATUS
@@ -182,26 +186,35 @@ class Ph
 
 		end
 
-		write_doc(xmldoc)
+		write_doc(xmldoc, pom_file)
 	end
 
 	def snapshot_dependency_version(pom_file, xmldoc, artifact_name, snapshot_dependency_version)
 		
-		# TODO: Ignore current file
-		puts "Considering #{pom_file} for #{artifact_name}"
+		puts "Considering #{pom_file} for #{artifact_name}" if DEBUG
 
-		xmldoc.elements.each("project/dependencies/dependency/version") do |pa|
+		xmldoc.elements.each("project/dependencies/dependency") do |pa|
 			
-			xml_version = pa.text
-			
-			puts "Changing version: '#{xml_version}' from #{pa.text} to #{snapshot_dependency_version}"
-
-			# TODO
-			pa.text = snapshot_dependency_version
-
+			get_name_and_version()
 		end
 
-		write_doc(xmldoc)
+		write_doc(xmldoc, pom_file)
+	end
+
+	def get_name_and_version()
+
+		element = nil
+		pa.elements.each do |e|
+
+			if e.name.eql? "artifactId"
+				element = e
+			end
+		end
+
+		if element.name.eql? artifact_name
+			puts "\tChanging version: #{version} for #{artifact_name} from #{pa.text} to #{snapshot_dependency_version} in #{pom_file}"
+			element.text = snapshot_dependency_version
+		end
 	end
 
 
@@ -224,52 +237,55 @@ class Ph
 
 		# Global help
 		puts "Usage:\t#{File.basename($0)} status <a|s> or ALL:SNAPSHOT\n" + 		     
-		     "\t#{File.basename($0)} unsnapshot <servicename>"
+		     "\t#{File.basename($0)} unsnapshot <servicename>\n" + 
+		     "\t#{File.basename($0)} snapshot <servicename> <version_and_branch_number>"
 	end
 
 end
 
-# Init without writing changes
-ph = Ph.new(false)
+if __FILE__==$0
 
-if ARGV.length > 0
+	ph = Ph.new(true)
 
-	command = ARGV[0]	
+	if ARGV.length > 0
 
-	poms = ph.find_poms()
+		command = ARGV[0]
+		poms = ph.find_poms("./test")
 
-	if command.eql? "status"
+		if command.eql? "status"
 
-		if ARGV.size.eql? 2 and !ARGV[1].nil?
-			secondary_command = ARGV[1].downcase
-			ph.status(poms, secondary_command)		
-		else
-			puts "Usage: #{File.basename($0)} status <#{Ph::SNAPSHOT_KEY}|#{Ph::ALL_KEY}>"
-		end
-	elsif command.eql? "unsnapshot"
-
-		artifact_names = ARGV[1..ARGV.length()]
-		artifact_names.each do |a|
-
-			if !a.nil?
-				ph.change_references(Ph::UNSNAPSHOT, poms, a)
+			if ARGV.size.eql? 2 and !ARGV[1].nil?
+				secondary_command = ARGV[1].downcase
+				ph.status(poms, secondary_command)
 			else
-				puts "ERROR: Usage: #{File.basename($0)} unsnapshot <nameofservice>"
+				puts "Usage: #{File.basename($0)} status <#{Ph::SNAPSHOT_KEY}|#{Ph::ALL_KEY}>"
 			end
-		end
-	elsif command.eql? "snapshot"
 
-		artifactname = ARGV[1]		
-		version_branch_name = ARGV[2]
-		if !artifactname.nil? and !version_branch_name.nil?
-			puts "Snapshot #{artifactname} with #{version_branch_name}"
-			ph.change_references(Ph::SNAPSHOT, poms, artifactname, version_branch_name)
+		elsif command.eql? "unsnapshot"
+
+			artifact_names = ARGV[1..ARGV.length()]
+			artifact_names.each do |a|
+
+				if !a.nil?
+					ph.change_references(Ph::UNSNAPSHOT, poms, a, nil)
+				else
+					puts "ERROR: Usage: #{File.basename($0)} unsnapshot <nameofservice>"
+				end
+			end
+
+		elsif command.eql? "snapshot"
+
+			artifactname = ARGV[1]		
+			version_branch_name = ARGV[2]
+			if !artifactname.nil? and !version_branch_name.nil?
+				ph.change_references(Ph::SNAPSHOT, poms, artifactname, version_branch_name)
+			else
+				puts "ERROR: Usage: #{File.basename($0)} snapshot <nameofservice> <version_and_branch_name>"
+			end
 		else
-			puts "ERROR: Usage: #{File.basename($0)} snapshot <nameofservice> <version_and_branch_name>"
+			puts ph.help()
 		end
 	else
-		puts ph.help()
-	end
-else
-	ph.help()
-end	
+		ph.help()
+	end	
+end

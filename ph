@@ -5,7 +5,7 @@ require 'fileutils'
 
 include REXML
 
-# Simple Maven POM helper to replace versions in the pom.xml
+# Simple Maven POM helper to replace versions in project and dependency pom.xml files
 class Ph
 
 	DEBUG = false
@@ -72,19 +72,6 @@ class Ph
 			version = pa.text			
 		end
 		return version
-	end
-
-	def unsnapshot(mode, poms, artifact_name)
-
-		# This will change the top level definition
-		poms.each do |p|			
-			replace_project_reference(PH::UNSNAPSHOT, p, artifact_name)		
-		end	
-
-		# This will change all references found in other pom files
-		poms.each do |p|
-			artifact, version_text = replace_dependency_references(PH::UNSNAPSHOT, p, artifact_name)
-		end
 	end
 
 	def change_project_references(mode, pom_file, artifact_name, version_and_branch_name)
@@ -189,40 +176,49 @@ class Ph
 		write_doc(xmldoc, pom_file)
 	end
 
+	#
+	# Snapshot the version for the artifact
+	# 
 	def snapshot_dependency_version(pom_file, xmldoc, artifact_name, snapshot_dependency_version)
 		
 		puts "Considering #{pom_file} for #{artifact_name}" if DEBUG
 
 		xmldoc.elements.each("project/dependencies/dependency") do |pa|
 			
-			get_name_and_version()
+			modify_artifact_version(pa, artifact_name, snapshot_dependency_version, pom_file)
 		end
 
 		write_doc(xmldoc, pom_file)
 	end
 
-	def get_name_and_version()
+	def modify_artifact_version(pa, artifact_name, snapshot_dependency_version, pom_file)
 
-		element = nil
+		artifact_name = nil
+		version = nil
 		pa.elements.each do |e|
 
 			if e.name.eql? "artifactId"
-				element = e
+				artifact_name = e
+			elsif artifact_name != nil and e.name.eql? "version"
+				version = e
 			end
 		end
 
-		if element.name.eql? artifact_name
-			puts "\tChanging version: #{version} for #{artifact_name} from #{pa.text} to #{snapshot_dependency_version} in #{pom_file}"
-			element.text = snapshot_dependency_version
+		puts "Found: #{artifact_name} and #{version}"
+		
+		if artifact_name != nil and version != nil
+
+			puts "\tChanging #{artifact_name} from #{pa.text} to #{snapshot_dependency_version} in #{pom_file}"
+			artifact_name.text = snapshot_dependency_version
 		end
 	end
 
-
-	def change_references(mode, poms, artifact_name, version_and_branch_name)
+	# Change all references in pom files
+	def change_pom_references(mode, poms, artifact_name, version_and_branch_name)
 
 		puts "#{mode} #{artifact_name} with #{version_and_branch_name}"
 
-		# This will change the top level definition
+		# This will change the top level reference
 		poms.each do |p|			
 			change_project_references(mode, p, artifact_name, version_and_branch_name)
 		end	
@@ -267,7 +263,7 @@ if __FILE__==$0
 			artifact_names.each do |a|
 
 				if !a.nil?
-					ph.change_references(Ph::UNSNAPSHOT, poms, a, nil)
+					ph.change_pom_references(Ph::UNSNAPSHOT, poms, a, nil)
 				else
 					puts "ERROR: Usage: #{File.basename($0)} unsnapshot <nameofservice>"
 				end
@@ -278,7 +274,7 @@ if __FILE__==$0
 			artifactname = ARGV[1]		
 			version_branch_name = ARGV[2]
 			if !artifactname.nil? and !version_branch_name.nil?
-				ph.change_references(Ph::SNAPSHOT, poms, artifactname, version_branch_name)
+				ph.change_pom_references(Ph::SNAPSHOT, poms, artifactname, version_branch_name)
 			else
 				puts "ERROR: Usage: #{File.basename($0)} snapshot <nameofservice> <version_and_branch_name>"
 			end

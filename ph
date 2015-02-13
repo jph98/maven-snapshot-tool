@@ -191,26 +191,31 @@ class Ph
 		write_doc(xmldoc, pom_file)
 	end
 
-	def modify_artifact_version(pa, artifact_name, snapshot_dependency_version, pom_file)
+	def modify_artifact_version(pa, artifact_name_to_match, snapshot_dependency_version, pom_file)
 
 		artifact_name = nil
 		version = nil
+
+		puts "Looking for: #{artifact_name_to_match}"
+
 		pa.elements.each do |e|
 
-			if e.name.eql? "artifactId"
+			puts "Name: #{e.name} Text: #{e.text}"
+
+			if e.name.eql? "artifactId" and e.text.eql? artifact_name_to_match
+				puts "Found an artifact matching #{artifact_name}"
 				artifact_name = e
 			elsif artifact_name != nil and e.name.eql? "version"
 				version = e
 				break
 			end
-		end
-
-		puts "Found: #{artifact_name} and #{version}"
+		end	
 		
 		if artifact_name != nil and version != nil
 
-			puts "\tChanging #{artifact_name} from #{pa.text} to #{snapshot_dependency_version} in #{pom_file}"
-			artifact_name.text = snapshot_dependency_version
+			puts "Found: #{artifact_name} and #{version}"
+			puts "\tChanging #{artifact_name} from #{version} to #{snapshot_dependency_version} in #{pom_file}"
+			version.text = snapshot_dependency_version
 		end
 	end
 

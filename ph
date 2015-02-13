@@ -196,14 +196,9 @@ class Ph
 		artifact_name = nil
 		version = nil
 
-		puts "Looking for: #{artifact_name_to_match}"
-
 		pa.elements.each do |e|
 
-			puts "Name: #{e.name} Text: #{e.text}"
-
 			if e.name.eql? "artifactId" and e.text.eql? artifact_name_to_match
-				puts "Found an artifact matching #{artifact_name}"
 				artifact_name = e
 			elsif artifact_name != nil and e.name.eql? "version"
 				version = e

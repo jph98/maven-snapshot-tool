@@ -201,6 +201,7 @@ class Ph
 				artifact_name = e
 			elsif artifact_name != nil and e.name.eql? "version"
 				version = e
+				break
 			end
 		end
 
